@@ -191,14 +191,14 @@ object LocalWeatherForecastApp extends MistJob {
            //println(s"currT ${ (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC))}  utcTime ${utcTimeStation.toString()}, lat ${latitude}, lon ${longitude}, temp ${airTemperature}, pressure ${seaLevelPressure}")
          }
 
-         if (airTemperature.toInt < 30 && airTemperature.toInt > -10) {
+         if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
 
-           val dataNorm = s"${(airTemperature.toInt + 10)} " +
+           val dataNorm = s"${(airTemperature.toInt + 50)} " +
              s"1:${geoPointDate.substring(0, 4).toDouble/2016.0} " +
              s"2:${geoPointDate.substring(4, 6).toDouble/12.0} " +
              s"3:${geoPointDate.substring(6, 8).toDouble/31.0} " +
              s"4:${geoPointTime.substring(0, 2).toDouble/24.0} " +
-             s"5:${geoPointTime.substring(2, 4).toDouble/60.0}"
+             s"5:${geoPointTime.substring(2, 4).toDouble/60.0} "
 
            //println(dataNorm)
 
@@ -233,13 +233,13 @@ object LocalWeatherForecastApp extends MistJob {
        val train = splits(0)
        val test = splits(1)
        // specify layers for the neural network:
-       val layers = Array[Int](5, 1000, 2000, 40)
+       val layers = Array[Int](5, 42, 100)
 
        val trainer = new MultilayerPerceptronClassifier()
          .setLayers(layers)
-         .setBlockSize(128)
+         .setBlockSize(64)
          .setSeed(1234L)
-         .setMaxIter(300)
+         .setMaxIter(1000)
        val model = trainer.fit(train)
 
        val result = model.transform(test)
@@ -249,6 +249,7 @@ object LocalWeatherForecastApp extends MistJob {
        val predictionAndLabels = result.select("prediction", "label")
        val evaluator = new MulticlassClassificationEvaluator()
          .setMetricName("precision")
+
        println("Precision:" + evaluator.evaluate(predictionAndLabels))
        val featureReq = Seq((1,
          Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
@@ -266,7 +267,7 @@ object LocalWeatherForecastApp extends MistJob {
        //prediction.select("prediction").foreach(println)
        //val predictedTemperature = prediction.select("prediction")
 
-       //answerpoint.temperature = predictedTemperature.rdd.first().getDouble(0).toInt -10
+       //answerpoint.temperature = predictedTemperature.rdd.first().getDouble(0).toInt -50
 
        println(answerpoint.temperature)
      }
