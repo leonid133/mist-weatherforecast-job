@@ -1,0 +1,5 @@
+.idea
+target/
+.vagrant
+derby.log
+metastore_db/
