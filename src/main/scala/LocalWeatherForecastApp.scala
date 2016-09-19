@@ -36,27 +36,27 @@ object LocalWeatherForecastApp extends MistJob {
     val distance = legs("distance").asInstanceOf[Map[String, Any]]
     val distanceValue = distance("value").asInstanceOf[BigInt]
 
-    val myTz = DateTimeZone.getDefault()
-    val now = new Date()
-    val utcString = new DateTime(now).withZone(DateTimeZone.UTC).toString()
+    val myTimeZone = DateTimeZone.getDefault()
+    val nowDate = new Date()
+    val nowDateUtcString = new DateTime(nowDate).withZone(DateTimeZone.UTC).toString()
 
-     val pointsIt = points.iterator
-     var resList = new ListBuffer[Result]()
+     val pointsIterator = points.iterator
+     var resultList = new ListBuffer[Result]()
 
      val r = scala.util.Random
 
      for (idx <- 1 to points.length) {
-       val currentPoint = pointsIt.next ()
-       val timeInPoint = new DateTime (now).withZone(DateTimeZone.UTC).plusSeconds(((durationValue / points.length) * (points.length - idx - 1) ).toInt)
+       val currentPoint = pointsIterator.next ()
+       val timeInPoint = new DateTime (nowDate).withZone(DateTimeZone.UTC).plusSeconds(((durationValue / points.length) * (points.length - idx - 1) ).toInt)
        println(timeInPoint.toString())
        val result = new Result (currentPoint, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString () )
-       resList += result
+       resultList += result
      }
 
-     val answer = new ResultList(resList.toList)
+     val answerResultList = new ResultList(resultList.toList)
 
-     val isd_hystory = context.textFile("source/noaa/isd-history.csv")
-     for(answerpoint <- answer.results) {
+     val isdHystory = context.textFile("source/noaa/isd-history.csv")
+     for(answerpoint <- answerResultList.results) {
        val latfind = answerpoint.point("lat").toFloat
        val lngfind = answerpoint.point("lng").toFloat
 
@@ -65,7 +65,7 @@ object LocalWeatherForecastApp extends MistJob {
            nearPointStations += new NearPoint(0, 0, "", (180.0).toFloat, (360.0).toFloat, 0)
          }
 
-       for (line <- isd_hystory.collect().drop(1)) {
+       for (line <- isdHystory.collect().drop(1)) {
          val rows = line.split(",").toList.zipWithIndex
          val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "").toInt
          val wban = rows.filter(row => row._2 == 1).head._1.replaceAll("\"", "").toInt
@@ -88,21 +88,21 @@ object LocalWeatherForecastApp extends MistJob {
            }
          } else 0.0.toFloat
 
-         var year = new DateTime (now).withZone(DateTimeZone.UTC).getYear().toInt
+         var year = new DateTime (nowDate).withZone(DateTimeZone.UTC).getYear().toInt
          for{stationIter <- nearPointStations}{
-           var latDistance = math.abs(stationIter.lat - latfind).toFloat
-           if (latDistance > 90.0) latDistance = latDistance - 90.0.toFloat
+           var latDistanceNewStation = math.abs(lat - latfind).toFloat
+           var lonDistanceNewStation = math.abs(lon - lngfind).toFloat
+           if (latDistanceNewStation > 180.0) latDistanceNewStation = latDistanceNewStation - 180.0.toFloat
+           if (lonDistanceNewStation > 360.0) lonDistanceNewStation = lonDistanceNewStation - 360.0.toFloat
 
-           var latDistanceNew = math.abs(lat - latfind).toFloat
-           if (latDistanceNew > 90.0) latDistanceNew = latDistanceNew - 90.0.toFloat
+           var latDistanceStationPoint = math.abs(stationIter.lat - latfind).toFloat
+           if (latDistanceStationPoint > 90.0) latDistanceStationPoint = latDistanceStationPoint - 90.0.toFloat
+           var lonDistanceStationPoint = math.abs(stationIter.lng - lngfind).toFloat
+           if (lonDistanceStationPoint > 180.0) lonDistanceStationPoint = lonDistanceStationPoint - 180.0.toFloat
 
-           if (latDistance >= latDistanceNew) {
-             var lonDistance = math.abs(stationIter.lng - lngfind).toFloat
-             if (lonDistance > 180.0) lonDistance = lonDistance - 180.0.toFloat
+           if ( math.pow((math.pow(latDistanceStationPoint, 2) + math.pow(lonDistanceStationPoint, 2)), 0.5) >=
+                math.pow((math.pow(latDistanceNewStation, 2) + math.pow(lonDistanceNewStation, 2)), 0.5)) {
 
-             var lonDistanceNew = math.abs(lon - lngfind).toFloat
-             if (lonDistanceNew > 180.0) lonDistanceNew = lonDistanceNew - 180.0.toFloat
-             if (lonDistance >= lonDistanceNew) {
                if (Files.exists(Paths.get(s"source/noaa/${year}/${usaf}-${wban}-${year}.gz"))) {
                  stationIter.usaf = usaf
                  stationIter.wban = wban
@@ -110,9 +110,7 @@ object LocalWeatherForecastApp extends MistJob {
                  stationIter.lat = lat
                  stationIter.lng = lon
                  stationIter.year = year
-
                }
-             }
            }
            year -= 1
          }
@@ -133,21 +131,11 @@ object LocalWeatherForecastApp extends MistJob {
          }
        }
 
-//       var xk = ArrayBuffer[Double]()
-//       for (k <- 0 to srcFile.collect().length) {
-//         xk += 0.0
-//       }
-//
-//       println(srcFile.collect().length, xk.size)
-//       var n = 0
-
        var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
        val pwt = new PrintWriter(new File("source/temp.txt"))
-//       var yesterdayTemp = 0.0
-//       var tempInMorning = 0.0
 
        for (line <- srcFile.collect()) {
-         //println(line)
+
          val numDataSection = line.substring(0, 4)
          val usaf = line.substring(4, 10)
          val wban = line.substring(10, 15)
@@ -185,45 +173,24 @@ object LocalWeatherForecastApp extends MistJob {
 
          val deltaTimeNew = (utcTimeStation.getMillis - (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis) / (1000 * 60 * 60)
          if (math.abs(deltaTimeNew) < math.abs(deltaTime)) {
-           //println(deltaTimeNew, deltaTime)
            answerpoint.temperature = airTemperature.toInt
            deltaTime = deltaTimeNew
-           //println(s"currT ${ (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC))}  utcTime ${utcTimeStation.toString()}, lat ${latitude}, lon ${longitude}, temp ${airTemperature}, pressure ${seaLevelPressure}")
          }
 
          if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
 
-           val dataNorm = s"${(airTemperature.toInt + 50)} " +
+           val dataNorm = s"${((airTemperature/4).toInt + 13)} " +
              s"1:${geoPointDate.substring(0, 4).toDouble/2016.0} " +
              s"2:${geoPointDate.substring(4, 6).toDouble/12.0} " +
              s"3:${geoPointDate.substring(6, 8).toDouble/31.0} " +
              s"4:${geoPointTime.substring(0, 2).toDouble/24.0} " +
              s"5:${geoPointTime.substring(2, 4).toDouble/60.0} "
 
-           //println(dataNorm)
-
            pwt.write(s"${dataNorm} \r\n")
 
-//         for (k <- 1 to line.length) {
-//           xk(k) = xk(k) + (math.exp(-2.0 * 3.14 * k * (n / line.length)) * (airTemperature.toInt).toDouble) * (1.0 / line.length.toDouble)
-//         }
-
          }
-         else {
-//         for (k <- 1 to line.length) {
-//           xk(k) = xk(k) + (math.exp(-2.0 * 3.14 * k * (n / line.length)) * yesterdayTemp.toInt.toDouble) * (1.0 / line.length.toDouble)
-//         }
-         }
-
-         //n = n + 1
        }
        pwt.close()
-
-//       val pw = new PrintWriter(new File("xk.txt" ))
-//       xk.map(x => pw.write(s"${x.toInt.toString} \r\n"))
-//       pw.close
-
-//       xk.map(x => println(x.toString))
 
        val data = MLUtils.loadLibSVMFile(contextSQL.sparkContext, "source/temp.txt")
 
@@ -233,13 +200,13 @@ object LocalWeatherForecastApp extends MistJob {
        val train = splits(0)
        val test = splits(1)
        // specify layers for the neural network:
-       val layers = Array[Int](5, 42, 100)
+       val layers = Array[Int](5, 42, 26)
 
        val trainer = new MultilayerPerceptronClassifier()
          .setLayers(layers)
          .setBlockSize(64)
          .setSeed(1234L)
-         .setMaxIter(1000)
+         .setMaxIter(30)
        val model = trainer.fit(train)
 
        val result = model.transform(test)
@@ -272,7 +239,7 @@ object LocalWeatherForecastApp extends MistJob {
        println(answerpoint.temperature)
      }
      val obj: JObject =
-       ( "parameters" -> answer.results.map {w =>
+       ( "parameters" -> answerResultList.results.map {w =>
          ("point" ->
            ("lat" -> w.point("lat").toFloat) ~
            ("lng" -> w.point("lng").toFloat)
