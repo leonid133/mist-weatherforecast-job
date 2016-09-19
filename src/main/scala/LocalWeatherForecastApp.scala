@@ -208,6 +208,10 @@ object LocalWeatherForecastApp extends MistJob {
          .setSeed(1234L)
          .setMaxIter(30)
        val model = trainer.fit(train)
+       val w = model.weights
+       val f = model.getClass().getDeclaredField("weights")
+       f.setAccessible(true)
+       f.set(model, w)
 
        val result = model.transform(test)
        result.select("prediction", "label", "features").show(250)
