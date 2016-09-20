@@ -4,7 +4,7 @@ import java.util.Date
 
 import io.hydrosphere.mist.MistJob
 import org.apache.spark.SparkContext
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql._
 import org.joda.time.{DateTime, DateTimeZone}
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -12,20 +12,34 @@ import org.json4s._
 import org.json4s.JsonDSL._
 import java.io._
 
-import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
+import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationModel, MultilayerPerceptronClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.util.MLUtils
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.ml.linalg.Vectors
+//import org.apache.spark.mllib.linalg.{Vector, Vectors}
+//import org.apache.spark.mllib.tree.DecisionTree
+//import org.apache.spark.mllib.tree.model.DecisionTreeModel
+//import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
+
+//import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+//import org.apache.spark.sql.Encoder
+//import org.apache.spark.sql.types._
+
+import org.mapdb.{DBMaker, Serializer}
+import org.apache.commons.lang.SerializationUtils
 
 case class NearPoint(var usaf: Int, var wban: Int, var name: String, var lat: Float, var lng: Float, var year: Int)
 
 object LocalWeatherForecastApp extends MistJob {
 
-   override def doStuff(contextSQL: SQLContext, parameters: Map[String, Any]): Map[String, Any] = {
+  override def doStuff(sparkSession: SparkSession, parameters: Map[String, Any]): Map[String, Any] = {
 
-    val context = contextSQL.sparkContext
+    //import sparkSession.implicits._
+
+    val contextSQL = sparkSession.sqlContext
+    val context = sparkSession.sparkContext
 
     parameters.foreach(f => println(f.toString()))
     val points = parameters("points").asInstanceOf[List[Map[String, String]]]
@@ -49,7 +63,7 @@ object LocalWeatherForecastApp extends MistJob {
        val currentPoint = pointsIterator.next ()
        val timeInPoint = new DateTime (nowDate).withZone(DateTimeZone.UTC).plusSeconds(((durationValue / points.length) * (points.length - idx - 1) ).toInt)
        println(timeInPoint.toString())
-       val result = new Result (currentPoint, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString () )
+       val result = new Result (currentPoint, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString (), "" )
        resultList += result
      }
 
@@ -121,13 +135,14 @@ object LocalWeatherForecastApp extends MistJob {
            var files = ArrayBuffer[RDD[String]]()
            for {stationIter <- nearPointStations} {
              println(stationIter.toString)
+             answerpoint.stationName = stationIter.name
              files +=
                context.textFile(s"source/noaa/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
            }
            context.union(files)
          }
          catch {
-           case _ => context.textFile("source/null")
+           case _ : Throwable => context.textFile("source/null")
          }
        }
 
@@ -179,7 +194,7 @@ object LocalWeatherForecastApp extends MistJob {
 
          if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
 
-           val dataNorm = s"${((airTemperature/4).toInt + 13)} " +
+           val dataNorm = s"${((airTemperature/4).toInt + 13).toDouble} " +
              s"1:${geoPointDate.substring(0, 4).toDouble/2016.0} " +
              s"2:${geoPointDate.substring(4, 6).toDouble/12.0} " +
              s"3:${geoPointDate.substring(6, 8).toDouble/31.0} " +
@@ -192,49 +207,91 @@ object LocalWeatherForecastApp extends MistJob {
        }
        pwt.close()
 
-       val data = MLUtils.loadLibSVMFile(contextSQL.sparkContext, "source/temp.txt")
+       //val data = MLUtils.loadLibSVMFile(contextSQL.sparkContext, "source/temp.txt")
+       //val dataFrame = contextSQL.createDataFrame(data).toDF("label", "features")
 
-       val dataFrame = contextSQL.createDataFrame(data)
+       val dataFrame =  contextSQL.read.format("libsvm")
+         .load("source/temp.txt")
 
-       val splits = dataFrame.randomSplit(Array(0.8, 0.2), seed = 1234L)
+       val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
        val train = splits(0)
        val test = splits(1)
        // specify layers for the neural network:
        val layers = Array[Int](5, 42, 26)
 
-       val trainer = new MultilayerPerceptronClassifier()
-         .setLayers(layers)
-         .setBlockSize(64)
-         .setSeed(1234L)
-         .setMaxIter(30)
+       val db  =  DBMaker
+         .fileDB("weightfile.db")
+         .fileLockDisable
+         .closeOnJvmShutdown
+         .make
+
+       val map = db
+         .hashMap("map", Serializer.STRING, Serializer.BYTE_ARRAY)
+         .createOrOpen
+
+       val loadedweight = if(map.containsKey(answerpoint.stationName)){
+         SerializationUtils.deserialize(map.get(answerpoint.stationName)).asInstanceOf[org.apache.spark.ml.linalg.Vector]
+       } else {
+         org.apache.spark.ml.linalg.Vectors.zeros(5*42*26)
+       }
+
+       val trainer = if(loadedweight.numNonzeros>0){
+         new MultilayerPerceptronClassifier()
+           .setLayers(layers)
+           .setBlockSize(64)
+           .setSeed(1234L)
+           .setMaxIter(1)
+           .setInitialWeights(loadedweight)
+       } else
+       {
+         new MultilayerPerceptronClassifier()
+           .setLayers(layers)
+           .setBlockSize(64)
+           .setSeed(1234L)
+           .setMaxIter(1500)
+       }
+
        val model = trainer.fit(train)
 
+       val w_ = SerializationUtils.serialize(model.weights)
+       map.put(answerpoint.stationName, w_)
+
+       db.commit()
+
+       db.close()
+
        val result = model.transform(test)
-       result.select("prediction", "label", "features").show(250)
+
+       //val result = model.transform(test)
+       //result.select("prediction", "label", "features").show(5)
        //     result.schema.printTreeString()
        //     result.select("features").foreach(println)
        val predictionAndLabels = result.select("prediction", "label")
        val evaluator = new MulticlassClassificationEvaluator()
-         .setMetricName("precision")
+         .setMetricName("accuracy")
+       println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
 
-       println("Precision:" + evaluator.evaluate(predictionAndLabels))
-       val featureReq = Seq((1,
+       val featureReq = Seq((1.0,
          Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
                         answerpoint.datetime.substring(5, 7).toDouble/12.0,
                         answerpoint.datetime.substring(8, 10).toDouble/31.0,
                         answerpoint.datetime.substring(11, 13).toDouble/24.0,
                         answerpoint.datetime.substring(14, 16).toDouble/60.0)))
+
        val requestData = contextSQL.createDataFrame(featureReq).toDF("label", "features")
 
+       //val prediction = model.transform(requestData)
+       requestData.show()
        val prediction = model.transform(requestData)
 
-       prediction.select("prediction", "label", "features").show(5)
-       prediction.schema.printTreeString()
+       prediction.select("prediction", "label", "features").show()
 
+       //prediction.schema.printTreeString()
        //prediction.select("prediction").foreach(println)
-       //val predictedTemperature = prediction.select("prediction")
 
-       //answerpoint.temperature = predictedTemperature.rdd.first().getDouble(0).toInt -50
+       val predictedTemperature = prediction.select("prediction").head()
+       if(predictedTemperature.size > 0)
+         answerpoint.temperature = (predictedTemperature.getDouble(0).toInt - 13)*4
 
        println(answerpoint.temperature)
      }

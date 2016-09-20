@@ -2,14 +2,16 @@ name := "LocalWeatherForecastApp"
 
 version := "1.0"
 
-scalaVersion := "2.10.6"
+scalaVersion := "2.11.8"
 
-//val sparkVersion = util.Properties.propOrNone("sparkVersion").getOrElse("1.5.2")
+val sparkVersion = util.Properties.propOrNone("sparkVersion").getOrElse("2.0.0")
+
+resolvers += "Typesafe Repository" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
 libraryDependencies ++= Seq(
-  "org.apache.spark" %% "spark-core" % "1.5.2",
-  "org.apache.spark" %% "spark-sql" % "1.5.2",
-  "org.apache.spark" %% "spark-hive" % "1.5.2",
-  "org.apache.spark" %% "spark-mllib" % "1.5.2",
-  "io.hydrosphere" %% "mist" % "0.4.0"
+  "org.apache.spark" %% "spark-core" % sparkVersion,
+  "org.apache.spark" %% "spark-sql" % sparkVersion,
+  "org.apache.spark" %% "spark-hive" % sparkVersion,
+  "org.apache.spark" %% "spark-mllib" % sparkVersion,
+  "io.hydrosphere" %% "mist" % "0.4.1-SNAPSHOT"
 )

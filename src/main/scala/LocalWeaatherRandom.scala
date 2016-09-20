@@ -1,4 +1,6 @@
+/*
 import java.util.{Date}
+
 
 import io.hydrosphere.mist.MistJob
 import org.apache.spark.SparkContext
@@ -57,3 +59,4 @@ object LocalWeatherRandom extends MistJob {
     Map("result" -> obj)
   }
 }
+*/

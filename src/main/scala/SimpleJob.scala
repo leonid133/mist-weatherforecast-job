@@ -1,4 +1,4 @@
-import io.hydrosphere.mist.MistJob
+/*import io.hydrosphere.mist.MistJob
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.hive.HiveContext
@@ -79,3 +79,4 @@ object TestError extends MistJob {
 object noDoStuffMethodError extends MistJob {
 
 }
+*/
