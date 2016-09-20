@@ -232,7 +232,7 @@ object LocalWeatherForecastApp extends MistJob {
            .setLayers(layers)
            .setBlockSize(64)
            .setSeed(1234L)
-           .setMaxIter(1500)
+           .setMaxIter(300)
        }
 
        val model = trainer.fit(train)
