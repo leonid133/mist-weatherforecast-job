@@ -3,7 +3,6 @@ import java.nio.file.Files
 import java.util.Date
 
 import io.hydrosphere.mist.MistJob
-import org.apache.spark.SparkContext
 import org.apache.spark.sql._
 import org.joda.time.{DateTime, DateTimeZone}
 
@@ -12,20 +11,10 @@ import org.json4s._
 import org.json4s.JsonDSL._
 import java.io._
 
-import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationModel, MultilayerPerceptronClassifier}
+import org.apache.spark.ml.classification.{MultilayerPerceptronClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
-import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.linalg.Vectors
-//import org.apache.spark.mllib.linalg.{Vector, Vectors}
-//import org.apache.spark.mllib.tree.DecisionTree
-//import org.apache.spark.mllib.tree.model.DecisionTreeModel
-//import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
-
-//import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-//import org.apache.spark.sql.Encoder
-//import org.apache.spark.sql.types._
 
 import org.mapdb.{DBMaker, Serializer}
 import org.apache.commons.lang.SerializationUtils
@@ -35,8 +24,6 @@ case class NearPoint(var usaf: Int, var wban: Int, var name: String, var lat: Fl
 object LocalWeatherForecastApp extends MistJob {
 
   override def doStuff(sparkSession: SparkSession, parameters: Map[String, Any]): Map[String, Any] = {
-
-    //import sparkSession.implicits._
 
     val contextSQL = sparkSession.sqlContext
     val context = sparkSession.sparkContext
@@ -207,9 +194,6 @@ object LocalWeatherForecastApp extends MistJob {
        }
        pwt.close()
 
-       //val data = MLUtils.loadLibSVMFile(contextSQL.sparkContext, "source/temp.txt")
-       //val dataFrame = contextSQL.createDataFrame(data).toDF("label", "features")
-
        val dataFrame =  contextSQL.read.format("libsvm")
          .load("source/temp.txt")
 
@@ -262,10 +246,6 @@ object LocalWeatherForecastApp extends MistJob {
 
        val result = model.transform(test)
 
-       //val result = model.transform(test)
-       //result.select("prediction", "label", "features").show(5)
-       //     result.schema.printTreeString()
-       //     result.select("features").foreach(println)
        val predictionAndLabels = result.select("prediction", "label")
        val evaluator = new MulticlassClassificationEvaluator()
          .setMetricName("accuracy")
@@ -280,14 +260,10 @@ object LocalWeatherForecastApp extends MistJob {
 
        val requestData = contextSQL.createDataFrame(featureReq).toDF("label", "features")
 
-       //val prediction = model.transform(requestData)
        requestData.show()
        val prediction = model.transform(requestData)
 
        prediction.select("prediction", "label", "features").show()
-
-       //prediction.schema.printTreeString()
-       //prediction.select("prediction").foreach(println)
 
        val predictedTemperature = prediction.select("prediction").head()
        if(predictedTemperature.size > 0)
@@ -308,9 +284,6 @@ object LocalWeatherForecastApp extends MistJob {
          ("datetime" -> w.datetime)
      } )
 
-    //println(compact(render(obj)))
-
     Map("result" -> obj)
-
   }
 }
