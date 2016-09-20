@@ -246,6 +246,8 @@ object LocalWeatherForecastApp extends MistJob {
 
        val result = model.transform(test)
 
+       result.show(15)
+
        val predictionAndLabels = result.select("prediction", "label")
        val evaluator = new MulticlassClassificationEvaluator()
          .setMetricName("accuracy")
@@ -260,16 +262,13 @@ object LocalWeatherForecastApp extends MistJob {
 
        val requestData = contextSQL.createDataFrame(featureReq).toDF("label", "features")
 
-       requestData.show()
        val prediction = model.transform(requestData)
-
-       prediction.select("prediction", "label", "features").show()
 
        val predictedTemperature = prediction.select("prediction").head()
        if(predictedTemperature.size > 0)
          answerpoint.temperature = (predictedTemperature.getDouble(0).toInt - 13)*4
 
-       println(answerpoint.temperature)
+       println("Temperature forecast: ", answerpoint.temperature, " C")
      }
      val obj: JObject =
        ( "parameters" -> answerResultList.results.map {w =>
