@@ -11,11 +11,10 @@ import org.json4s._
 import org.json4s.JsonDSL._
 import java.io._
 
-import org.apache.spark.ml.classification.{MultilayerPerceptronClassifier}
+import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationModel, MultilayerPerceptronClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.linalg.Vectors
 import org.apache.spark.rdd.RDD
-
 import org.mapdb.{DBMaker, Serializer}
 import org.apache.commons.lang.SerializationUtils
 
@@ -39,7 +38,7 @@ object LocalWeatherForecastAppTeach extends MistJob {
 
     for (line <- isdHystory.collect().drop(1)) {
      val rows = line.split(",").toList.zipWithIndex
-      
+
      val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "").toInt
      val wban = rows.filter(row => row._2 == 1).head._1.replaceAll("\"", "").toInt
      val stationName: String = rows.filter(row => row._2 == 2).head._1
@@ -184,7 +183,7 @@ object LocalWeatherForecastAppTeach extends MistJob {
             .setMaxIter(300)
         }
 
-        val model = trainer.fit(train)
+        val model =  trainer.fit(train)
 
         val w_ = SerializationUtils.serialize(model.weights)
         map.put(stationName, w_)
