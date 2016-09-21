@@ -89,7 +89,7 @@ object LocalWeatherForecastAppTeach extends MistJob {
           }
         }
 
-        val pwt = new PrintWriter(new File("source/temp.txt"))
+        val pwt = new PrintWriter(new File("source/temp_teach.txt"))
         for (line <- srcFile.collect()) {
 
           val numDataSection = line.substring(0, 4)
@@ -145,7 +145,7 @@ object LocalWeatherForecastAppTeach extends MistJob {
 
         if (!Files.exists(Paths.get(s"source/${nearPointStations.head.name}/data/_SUCCESS"))) {
           val dataFrame = contextSQL.read.format("libsvm")
-            .load("source/temp.txt")
+            .load("source/temp_teach.txt")
 
           val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
           val train = splits(0)
