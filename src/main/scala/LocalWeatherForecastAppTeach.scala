@@ -41,7 +41,7 @@ object LocalWeatherForecastAppTeach extends MistJob {
 
      val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "").toInt
      val wban = rows.filter(row => row._2 == 1).head._1.replaceAll("\"", "").toInt
-     val stationName: String = rows.filter(row => row._2 == 2).head._1
+     val stationName: String = rows.filter(row => row._2 == 2).head._1.replaceAll("\"", "")
      val latStr = rows.filter(row => row._2 == 6).head.toString().replaceAll("[\"()]", "").replaceFirst(",6", "")
 
      val lat = if (latStr.length > 0) {
@@ -152,47 +152,19 @@ object LocalWeatherForecastAppTeach extends MistJob {
         // specify layers for the neural network:
         val layers = Array[Int](5, 42, 26)
 
-        val db = DBMaker
-          .fileDB("weightfile.db")
-          .fileLockDisable
-          .closeOnJvmShutdown
-          .make
 
-        val map = db
-          .hashMap("map", Serializer.STRING, Serializer.BYTE_ARRAY)
-          .createOrOpen
-
-        val loadedweight = if (map.containsKey(stationName)) {
-          SerializationUtils.deserialize(map.get(stationName)).asInstanceOf[org.apache.spark.ml.linalg.Vector]
-        } else {
-          org.apache.spark.ml.linalg.Vectors.zeros(5 * 42 * 26)
-        }
-
-        val trainer = if (loadedweight.numNonzeros > 0) {
-          new MultilayerPerceptronClassifier()
-            .setLayers(layers)
-            .setBlockSize(64)
-            .setSeed(1234L)
-            .setMaxIter(1)
-            .setInitialWeights(loadedweight)
-        } else {
-          new MultilayerPerceptronClassifier()
+        val trainer = new MultilayerPerceptronClassifier()
             .setLayers(layers)
             .setBlockSize(64)
             .setSeed(1234L)
             .setMaxIter(300)
-        }
+
 
         val model =  trainer.fit(train)
 
         model.save(stationName)
 
-        val w_ = SerializationUtils.serialize(model.weights)
-        map.put(stationName, w_)
 
-        db.commit()
-
-        db.close()
 
         val result = model.transform(test)
 

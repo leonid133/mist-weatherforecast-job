@@ -49,7 +49,13 @@ object LocalWeatherForecastApp extends MistJob {
        val currentPoint = pointsIterator.next ()
        val timeInPoint = new DateTime (nowDate).withZone(DateTimeZone.UTC).plusSeconds(((durationValue / points.length) * (points.length - idx - 1) ).toInt)
        println(timeInPoint.toString())
-       val result = new Result (currentPoint, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString (), "" )
+
+       var hour = timeInPoint.getHourOfDay + (currentPoint("lng").toFloat * 24.0 / 360.0)
+       if(hour > 24) hour = hour - 24
+       if(hour < 0) hour = 24 + hour
+       val sun = (100.0 * (1.0 - math.abs(hour - 12).toFloat / 12.0)).toFloat
+
+       val result = new Result (currentPoint, (r.nextFloat * 100).toFloat, sun, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString (), "" )
        resultList += result
      }
 
@@ -71,7 +77,7 @@ object LocalWeatherForecastApp extends MistJob {
          val rows = line.split(",").toList.zipWithIndex
          val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "").toInt
          val wban = rows.filter(row => row._2 == 1).head._1.replaceAll("\"", "").toInt
-         val stationName: String = rows.filter(row => row._2 == 2).head._1
+         val stationName: String = rows.filter(row => row._2 == 2).head._1.replaceAll("\"", "")
          val latStr = rows.filter(row => row._2 == 6).head.toString().replaceAll("[\"()]", "").replaceFirst(",6", "")
 
          val lat = if (latStr.length > 0) {
@@ -117,31 +123,10 @@ object LocalWeatherForecastApp extends MistJob {
            year -= 1
          }
        }
-       val db  =  DBMaker
-         .fileDB("weightfile.db")
-         .fileLockDisable
-         .closeOnJvmShutdown
-         .make
 
-       val map = db
-         .hashMap("map", Serializer.STRING, Serializer.BYTE_ARRAY)
-         .createOrOpen
-
-       val loadedweight = if(map.containsKey(answerpoint.stationName)){
-         SerializationUtils.deserialize(map.get(answerpoint.stationName)).asInstanceOf[org.apache.spark.ml.linalg.Vector]
-       } else {
-         org.apache.spark.ml.linalg.Vectors.zeros(5*42*26)
-       }
-
-       val dataFrame =  contextSQL.read.format("libsvm")
-         .load("source/temp.txt")
-       val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
-       val train = splits(0)
-       val test = splits(1)
-
-       if(loadedweight.numNonzeros>0) {
+       if (Files.exists(Paths.get(s"${nearPointStations.head.name}/data/_SUCCESS"))) {
          println("start load")
-         val model = MultilayerPerceptronClassificationModel.load(answerpoint.stationName)
+         val model = MultilayerPerceptronClassificationModel.load(nearPointStations.head.name)
          val featureReq = Seq((1.0,
            Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
              answerpoint.datetime.substring(5, 7).toDouble/12.0,
@@ -164,6 +149,12 @@ object LocalWeatherForecastApp extends MistJob {
        else
        {
          println("start train")
+
+         val dataFrame =  contextSQL.read.format("libsvm")
+           .load("source/temp.txt")
+         val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
+         val train = splits(0)
+         val test = splits(1)
 
          val srcFile = {
            try {
@@ -250,7 +241,6 @@ object LocalWeatherForecastApp extends MistJob {
            .setMaxIter(300)
          val model = trainer.fit(train)
          val w_ = SerializationUtils.serialize(model.weights)
-         map.put(answerpoint.stationName, w_)
 
          model.save(answerpoint.stationName)
          val result = model.transform(test)
@@ -264,8 +254,6 @@ object LocalWeatherForecastApp extends MistJob {
 
        }
        println("finish")
-       db.commit()
-       db.close()
      }
      val obj: JObject =
        ( "parameters" -> answerResultList.results.map {w =>
