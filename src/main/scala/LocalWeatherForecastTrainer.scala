@@ -18,7 +18,7 @@ import org.apache.spark.rdd.RDD
 import org.mapdb.{DBMaker, Serializer}
 import org.apache.commons.lang.SerializationUtils
 
-object LocalWeatherForecastAppTeach extends MistJob {
+object LocalWeatherForecastTrainer extends MistJob {
 
   override def doStuff(sparkSession: SparkSession, parameters: Map[String, Any]): Map[String, Any] = {
 
