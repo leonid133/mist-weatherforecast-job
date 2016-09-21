@@ -62,6 +62,9 @@ object LocalWeatherForecastApp extends MistJob {
      val answerResultList = new ResultList(resultList.toList)
 
      val isdHystory = context.textFile("source/noaa/isd-history.csv")
+//    context.hadoopConfiguration.set("fs.s3n.awsAccessKeyId", "BLABLA")
+//    context.hadoopConfiguration.set("fs.s3n.awsSecretAccessKey", "....") // can contain "/"
+//    val isdHystory = context.textFile("s3n://mist-weather/isd-history.csv")
 
      answerResultList.results.map { answerpoint =>
 
@@ -124,9 +127,10 @@ object LocalWeatherForecastApp extends MistJob {
          }
        }
 
-       if (Files.exists(Paths.get(s"${nearPointStations.head.name}/data/_SUCCESS"))) {
+       if (Files.exists(Paths.get(s"source/${nearPointStations.head.name}/data/_SUCCESS"))) {
          println("start load")
-         val model = MultilayerPerceptronClassificationModel.load(nearPointStations.head.name)
+         val model = MultilayerPerceptronClassificationModel.load(s"source/${nearPointStations.head.name}")
+
          val featureReq = Seq((1.0,
            Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
              answerpoint.datetime.substring(5, 7).toDouble/12.0,
@@ -150,18 +154,13 @@ object LocalWeatherForecastApp extends MistJob {
        {
          println("start train")
 
-         val dataFrame =  contextSQL.read.format("libsvm")
-           .load("source/temp.txt")
-         val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
-         val train = splits(0)
-         val test = splits(1)
-
          val srcFile = {
            try {
              var files = ArrayBuffer[RDD[String]]()
+             answerpoint.stationName = nearPointStations.head.name
              for {stationIter <- nearPointStations} {
                println(stationIter.toString)
-               answerpoint.stationName = stationIter.name
+
                files +=
                  context.textFile(s"source/noaa/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
              }
@@ -233,6 +232,12 @@ object LocalWeatherForecastApp extends MistJob {
          }
          pwt.close()
 
+         val dataFrame =  contextSQL.read.format("libsvm")
+           .load("source/temp.txt")
+         val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
+         val train = splits(0)
+         val test = splits(1)
+
          val layers = Array[Int](5, 42, 26)
          val trainer =  new MultilayerPerceptronClassifier()
            .setLayers(layers)
@@ -242,7 +247,7 @@ object LocalWeatherForecastApp extends MistJob {
          val model = trainer.fit(train)
          val w_ = SerializationUtils.serialize(model.weights)
 
-         model.save(answerpoint.stationName)
+         model.save(s"source/${answerpoint.stationName}")
          val result = model.transform(test)
 
          result.show(15)

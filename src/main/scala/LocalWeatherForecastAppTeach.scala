@@ -143,37 +143,37 @@ object LocalWeatherForecastAppTeach extends MistJob {
 
         pwt.close()
 
-        val dataFrame = contextSQL.read.format("libsvm")
-          .load("source/temp.txt")
+        if (!Files.exists(Paths.get(s"source/${nearPointStations.head.name}/data/_SUCCESS"))) {
+          val dataFrame = contextSQL.read.format("libsvm")
+            .load("source/temp.txt")
 
-        val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
-        val train = splits(0)
-        val test = splits(1)
-        // specify layers for the neural network:
-        val layers = Array[Int](5, 42, 26)
+          val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
+          val train = splits(0)
+          val test = splits(1)
+          // specify layers for the neural network:
+          val layers = Array[Int](5, 42, 26)
 
 
-        val trainer = new MultilayerPerceptronClassifier()
+          val trainer = new MultilayerPerceptronClassifier()
             .setLayers(layers)
             .setBlockSize(64)
             .setSeed(1234L)
             .setMaxIter(300)
 
 
-        val model =  trainer.fit(train)
+          val model = trainer.fit(train)
 
-        model.save(stationName)
+          model.save(s"source/${nearPointStations.head.name}")
 
+          val result = model.transform(test)
 
+          result.show(15)
 
-        val result = model.transform(test)
-
-        result.show(15)
-
-        val predictionAndLabels = result.select("prediction", "label")
-        val evaluator = new MulticlassClassificationEvaluator()
-          .setMetricName("accuracy")
-        println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
+          val predictionAndLabels = result.select("prediction", "label")
+          val evaluator = new MulticlassClassificationEvaluator()
+            .setMetricName("accuracy")
+          println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
+        }
       }
     }
 
