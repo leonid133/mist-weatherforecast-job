@@ -185,6 +185,8 @@ object LocalWeatherForecastAppTeach extends MistJob {
 
         val model =  trainer.fit(train)
 
+        model.save(stationName)
+
         val w_ = SerializationUtils.serialize(model.weights)
         map.put(stationName, w_)
 

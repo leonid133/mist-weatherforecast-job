@@ -133,7 +133,38 @@ object LocalWeatherForecastApp extends MistJob {
          org.apache.spark.ml.linalg.Vectors.zeros(5*42*26)
        }
 
-       if(0 == loadedweight.numNonzeros) {
+       val dataFrame =  contextSQL.read.format("libsvm")
+         .load("source/temp.txt")
+       val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
+       val train = splits(0)
+       val test = splits(1)
+
+       if(loadedweight.numNonzeros>0) {
+         println("start load")
+         val model = MultilayerPerceptronClassificationModel.load(answerpoint.stationName)
+         val featureReq = Seq((1.0,
+           Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
+             answerpoint.datetime.substring(5, 7).toDouble/12.0,
+             answerpoint.datetime.substring(8, 10).toDouble/31.0,
+             answerpoint.datetime.substring(11, 13).toDouble/24.0,
+             answerpoint.datetime.substring(14, 16).toDouble/60.0)))
+
+         val requestData = contextSQL.createDataFrame(featureReq).toDF("label", "features")
+
+         requestData.show()
+
+         val prediction = model.transform(requestData)
+
+         val predictedTemperature = prediction.select("prediction").head()
+         if(predictedTemperature.size > 0)
+           answerpoint.temperature = (predictedTemperature.getDouble(0).toInt - 13)*4
+
+         println("Temperature forecast: ", answerpoint.temperature, " C")
+       }
+       else
+       {
+         println("start train")
+
          val srcFile = {
            try {
              var files = ArrayBuffer[RDD[String]]()
@@ -210,39 +241,17 @@ object LocalWeatherForecastApp extends MistJob {
            }
          }
          pwt.close()
-       }
 
-       val dataFrame =  contextSQL.read.format("libsvm")
-         .load("source/temp.txt")
-       val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
-       val train = splits(0)
-       val test = splits(1)
-
-       val model = if(loadedweight.numNonzeros>0) {
-         println("start load")
-         MultilayerPerceptronClassificationModel.load(answerpoint.stationName)
-       }
-       else
-       {
-         println("start train")
          val layers = Array[Int](5, 42, 26)
          val trainer =  new MultilayerPerceptronClassifier()
            .setLayers(layers)
            .setBlockSize(64)
            .setSeed(1234L)
            .setMaxIter(300)
-         trainer.fit(train)
-       }
-       println("finish")
+         val model = trainer.fit(train)
+         val w_ = SerializationUtils.serialize(model.weights)
+         map.put(answerpoint.stationName, w_)
 
-       val w_ = SerializationUtils.serialize(model.weights)
-       map.put(answerpoint.stationName, w_)
-
-       db.commit()
-
-       db.close()
-
-       if(0 == loadedweight.numNonzeros) {
          model.save(answerpoint.stationName)
          val result = model.transform(test)
 
@@ -252,26 +261,11 @@ object LocalWeatherForecastApp extends MistJob {
          val evaluator = new MulticlassClassificationEvaluator()
            .setMetricName("accuracy")
          println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
+
        }
-
-       val featureReq = Seq((1.0,
-         Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
-                        answerpoint.datetime.substring(5, 7).toDouble/12.0,
-                        answerpoint.datetime.substring(8, 10).toDouble/31.0,
-                        answerpoint.datetime.substring(11, 13).toDouble/24.0,
-                        answerpoint.datetime.substring(14, 16).toDouble/60.0)))
-
-       val requestData = contextSQL.createDataFrame(featureReq).toDF("label", "features")
-
-       requestData.show()
-
-       val prediction = model.transform(requestData)
-
-       val predictedTemperature = prediction.select("prediction").head()
-       if(predictedTemperature.size > 0)
-         answerpoint.temperature = (predictedTemperature.getDouble(0).toInt - 13)*4
-
-       println("Temperature forecast: ", answerpoint.temperature, " C")
+       println("finish")
+       db.commit()
+       db.close()
      }
      val obj: JObject =
        ( "parameters" -> answerResultList.results.map {w =>
