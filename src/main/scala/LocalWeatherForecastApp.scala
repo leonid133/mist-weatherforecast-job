@@ -117,6 +117,85 @@ object LocalWeatherForecastApp extends MistJob {
            year -= 1
          }
        }
+
+       val srcFile = {
+         try {
+           var files = ArrayBuffer[RDD[String]]()
+           for {stationIter <- nearPointStations} {
+             println(stationIter.toString)
+             answerpoint.stationName = stationIter.name
+             files +=
+               context.textFile(s"source/noaa/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
+           }
+           context.union(files)
+         }
+         catch {
+           case _ : Throwable => context.textFile("source/null")
+         }
+       }
+
+       var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
+       val pwt = new PrintWriter(new File("source/temp.txt"))
+
+       srcFile.collect().map { line =>
+
+         val numDataSection = line.substring(0, 4)
+         val usaf = line.substring(4, 10)
+         val wban = line.substring(10, 15)
+         val geoPointDate = line.substring(15, 23)
+         val geoPointTime = line.substring(23, 27)
+         val geoPointSourceFlag = line.substring(27, 28)
+         val latitude = line.substring(28, 34).toFloat / 1000.0
+         val longitude = line.substring(34, 41).toFloat / 1000.0
+         val reportType = line.substring(41, 46)
+         val elevationDimension = line.substring(46, 51)
+         val callLetterIdentiefer = line.substring(51, 56)
+         val qualityControlProcessName = line.substring(56, 60)
+         val directionAngle = line.substring(60, 63)
+         val directionQualityCode = line.substring(63, 64)
+         val typeCode = line.substring(64, 65)
+         val speedRate = line.substring(65, 69)
+         val speedQualityCode = line.substring(69, 70)
+         val cellingHeightDimension = line.substring(70, 75)
+         val cellingQualityCode = line.substring(75, 76)
+         val cellingDeterminationCode = line.substring(76, 77)
+         val okCode = line.substring(77, 78)
+         val distanceDimension = line.substring(78, 84)
+         val distanceQualityCode = line.substring(84, 85)
+         val variablilityCode = line.substring(85, 86)
+         val qualityVariabilityCode = line.substring(86, 87)
+         val airTemperature = line.substring(87, 92).toFloat / 10.0
+         val airTemperatureQualityCode = line.substring(92, 93)
+         val dewPointTemperature = line.substring(93, 98)
+         val dewPointQualityCode = line.substring(98, 99)
+         val seaLevelPressure = line.substring(99, 104).toFloat / 10.0
+         val seaLevelPressureQualityCode = line.substring(104, 105)
+
+         val utcTimeStationString = s"${geoPointDate.substring(0, 4)}-${geoPointDate.substring(4, 6)}-${geoPointDate.substring(6, 8)}T${geoPointTime.substring(0, 2)}:${geoPointTime.substring(2, 4)}:00Z"
+         val utcTimeStation = new DateTime(utcTimeStationString).withZone(DateTimeZone.UTC)
+
+         val deltaTimeNew = (utcTimeStation.getMillis - (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis) / (1000 * 60 * 60)
+         if (math.abs(deltaTimeNew) < math.abs(deltaTime)) {
+           answerpoint.temperature = airTemperature.toInt
+           deltaTime = deltaTimeNew
+         }
+
+         if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
+
+           val dataNorm = s"${((airTemperature/4).toInt + 13).toDouble} " +
+             s"1:${geoPointDate.substring(0, 4).toDouble/2016.0} " +
+             s"2:${geoPointDate.substring(4, 6).toDouble/12.0} " +
+             s"3:${geoPointDate.substring(6, 8).toDouble/31.0} " +
+             s"4:${geoPointTime.substring(0, 2).toDouble/24.0} " +
+             s"5:${geoPointTime.substring(2, 4).toDouble/60.0} "
+
+           pwt.write(s"${dataNorm} \r\n")
+
+         }
+       }
+
+       pwt.close()
+
        val db  =  DBMaker
          .fileDB("weightfile.db")
          .fileLockDisable
@@ -133,107 +212,42 @@ object LocalWeatherForecastApp extends MistJob {
          org.apache.spark.ml.linalg.Vectors.zeros(5*42*26)
        }
 
-       if(0 == loadedweight.numNonzeros) {
-         val srcFile = {
-           try {
-             var files = ArrayBuffer[RDD[String]]()
-             for {stationIter <- nearPointStations} {
-               println(stationIter.toString)
-               answerpoint.stationName = stationIter.name
-               files +=
-                 context.textFile(s"source/noaa/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
-             }
-             context.union(files)
-           }
-           catch {
-             case _: Throwable => context.textFile("source/null")
-           }
-         }
+       val layers = Array[Int](5, 42, 26)
 
-         var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
-         val pwt = new PrintWriter(new File("source/temp.txt"))
-
-         srcFile.collect().map { line =>
-
-           val numDataSection = line.substring(0, 4)
-           val usaf = line.substring(4, 10)
-           val wban = line.substring(10, 15)
-           val geoPointDate = line.substring(15, 23)
-           val geoPointTime = line.substring(23, 27)
-           val geoPointSourceFlag = line.substring(27, 28)
-           val latitude = line.substring(28, 34).toFloat / 1000.0
-           val longitude = line.substring(34, 41).toFloat / 1000.0
-           val reportType = line.substring(41, 46)
-           val elevationDimension = line.substring(46, 51)
-           val callLetterIdentiefer = line.substring(51, 56)
-           val qualityControlProcessName = line.substring(56, 60)
-           val directionAngle = line.substring(60, 63)
-           val directionQualityCode = line.substring(63, 64)
-           val typeCode = line.substring(64, 65)
-           val speedRate = line.substring(65, 69)
-           val speedQualityCode = line.substring(69, 70)
-           val cellingHeightDimension = line.substring(70, 75)
-           val cellingQualityCode = line.substring(75, 76)
-           val cellingDeterminationCode = line.substring(76, 77)
-           val okCode = line.substring(77, 78)
-           val distanceDimension = line.substring(78, 84)
-           val distanceQualityCode = line.substring(84, 85)
-           val variablilityCode = line.substring(85, 86)
-           val qualityVariabilityCode = line.substring(86, 87)
-           val airTemperature = line.substring(87, 92).toFloat / 10.0
-           val airTemperatureQualityCode = line.substring(92, 93)
-           val dewPointTemperature = line.substring(93, 98)
-           val dewPointQualityCode = line.substring(98, 99)
-           val seaLevelPressure = line.substring(99, 104).toFloat / 10.0
-           val seaLevelPressureQualityCode = line.substring(104, 105)
-
-           val utcTimeStationString = s"${geoPointDate.substring(0, 4)}-${geoPointDate.substring(4, 6)}-${geoPointDate.substring(6, 8)}T${geoPointTime.substring(0, 2)}:${geoPointTime.substring(2, 4)}:00Z"
-           val utcTimeStation = new DateTime(utcTimeStationString).withZone(DateTimeZone.UTC)
-
-           val deltaTimeNew = (utcTimeStation.getMillis - (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis) / (1000 * 60 * 60)
-           if (math.abs(deltaTimeNew) < math.abs(deltaTime)) {
-             answerpoint.temperature = airTemperature.toInt
-             deltaTime = deltaTimeNew
-           }
-
-           if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
-
-             val dataNorm = s"${((airTemperature / 4).toInt + 13).toDouble} " +
-               s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
-               s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
-               s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
-               s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
-               s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} "
-
-             pwt.write(s"${dataNorm} \r\n")
-
-           }
-         }
-         pwt.close()
-       }
-
-       val dataFrame =  contextSQL.read.format("libsvm")
-         .load("source/temp.txt")
-       val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
-       val train = splits(0)
-       val test = splits(1)
-
-       val model = if(loadedweight.numNonzeros>0) {
-         println("start load")
-         MultilayerPerceptronClassificationModel.load(answerpoint.stationName)
-       }
-       else
+       val trainer = if(loadedweight.numNonzeros>0){
+         new MultilayerPerceptronClassifier()
+           .setLayers(layers)
+           .setBlockSize(64)
+           .setMaxIter(1)
+           .setInitialWeights(loadedweight)
+       } else
        {
-         println("start train")
-         val layers = Array[Int](5, 42, 26)
-         val trainer =  new MultilayerPerceptronClassifier()
+         new MultilayerPerceptronClassifier()
            .setLayers(layers)
            .setBlockSize(64)
            .setSeed(1234L)
            .setMaxIter(300)
+       }
+
+       val dataFrame =  contextSQL.read.format("libsvm")
+         .load("source/temp.txt")
+
+       val splits = if(loadedweight.numNonzeros>0) {
+         dataFrame.randomSplit(Array(0.1, 0.1), seed = 1234L)
+       } else {
+         dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
+       }
+       val train = splits(0)
+       val test = splits(1)
+
+       val model = if(loadedweight.numNonzeros>0) {
+         MultilayerPerceptronClassificationModel.load(answerpoint.stationName)
+       }
+       else
+       {
          trainer.fit(train)
        }
-       println("finish")
+
 
        val w_ = SerializationUtils.serialize(model.weights)
        map.put(answerpoint.stationName, w_)
