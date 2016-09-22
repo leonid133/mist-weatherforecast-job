@@ -36,7 +36,7 @@ object LocalWeatherForecastTrainer extends MistJob {
        nearPointStations += new NearPoint(0, 0, "", (180.0).toFloat, (360.0).toFloat, 0)
      }
 
-    for (line <- isdHystory.collect().drop(1)) {
+    isdHystory.collect().drop(1).map { line =>
      val rows = line.split(",").toList.zipWithIndex
 
      val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "").toInt

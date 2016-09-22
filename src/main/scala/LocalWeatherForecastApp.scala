@@ -38,25 +38,29 @@ object LocalWeatherForecastApp extends MistJob {
 
     val myTimeZone = DateTimeZone.getDefault()
     val nowDate = new Date()
-    val nowDateUtcString = new DateTime(nowDate).withZone(DateTimeZone.UTC).toString()
 
      val pointsIterator = points.iterator
      var resultList = new ListBuffer[Result]()
 
      val r = scala.util.Random
 
+     var hourPrev = 100.0
      for (idx <- 1 to points.length) {
        val currentPoint = pointsIterator.next ()
-       val timeInPoint = new DateTime (nowDate).withZone(DateTimeZone.UTC).plusSeconds(((durationValue / points.length) * (points.length - idx - 1) ).toInt)
+       val timeInPoint = new DateTime (nowDate).plusSeconds(((durationValue / points.length) * (idx - 1) ).toInt)
        println(timeInPoint.toString())
+       var hour = timeInPoint.getHourOfDay()
+       var utchour = (hour + (currentPoint("lng").toFloat * 24.0 / 360.0)).toInt
+       if(utchour > 24) utchour = utchour - 24
+       if(utchour < 0) utchour = 24 + utchour
+       val sun = (100.0 * (1.0 - math.abs(utchour - 12).toFloat / 12.0)).toFloat
 
-       var hour = timeInPoint.getHourOfDay + (currentPoint("lng").toFloat * 24.0 / 360.0)
-       if(hour > 24) hour = hour - 24
-       if(hour < 0) hour = 24 + hour
-       val sun = (100.0 * (1.0 - math.abs(hour - 12).toFloat / 12.0)).toFloat
-
-       val result = new Result (currentPoint, (r.nextFloat * 100).toFloat, sun, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString (), "" )
-       resultList += result
+       if(math.abs(hour - hourPrev) > 0) {
+         println(timeInPoint.toString())
+         val result = new Result(currentPoint, (r.nextFloat * 100).toFloat, sun, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString(), "")
+         resultList += result
+         hourPrev = hour
+       }
      }
 
      val answerResultList = new ResultList(resultList.toList)
