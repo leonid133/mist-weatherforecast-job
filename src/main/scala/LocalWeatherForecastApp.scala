@@ -10,6 +10,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import org.json4s._
 import org.json4s.JsonDSL._
 import java.io._
+import java.net.URI
 
 import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationModel, MultilayerPerceptronClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
@@ -18,11 +19,13 @@ import org.apache.spark.rdd.RDD
 import org.mapdb.{DBMaker, Serializer}
 import org.apache.commons.lang.SerializationUtils
 
-case class NearPoint(var usaf: Int, var wban: Int, var name: String, var lat: Float, var lng: Float, var year: Int)
+case class NearPoint(var usaf: String, var wban: String, var name: String, var lat: Float, var lng: Float, var year: Int)
 
 object LocalWeatherForecastApp extends MistJob {
 
   override def doStuff(sparkSession: SparkSession, parameters: Map[String, Any]): Map[String, Any] = {
+    val hdfshost = "hdfs://172.32.1.53:9000"
+    val source = s"${hdfshost}/weather" // source/noaa/
 
     val contextSQL = sparkSession.sqlContext
     val context = sparkSession.sparkContext
@@ -48,14 +51,14 @@ object LocalWeatherForecastApp extends MistJob {
      for (idx <- 1 to points.length) {
        val currentPoint = pointsIterator.next ()
        val timeInPoint = new DateTime (nowDate).plusSeconds(((durationValue / points.length) * (idx - 1) ).toInt)
-       println(timeInPoint.toString())
+
        var hour = timeInPoint.getHourOfDay()
        var utchour = (hour + (currentPoint("lng").toFloat * 24.0 / 360.0)).toInt
        if(utchour > 24) utchour = utchour - 24
        if(utchour < 0) utchour = 24 + utchour
        val sun = (100.0 * (1.0 - math.abs(utchour - 12).toFloat / 12.0)).toFloat
 
-       if(math.abs(hour - hourPrev) > 0) {
+       if(math.abs(hour - hourPrev) > 0 || idx == points.length || idx == (points.length-1)) {
          println(timeInPoint.toString())
          val result = new Result(currentPoint, (r.nextFloat * 100).toFloat, sun, (r.nextFloat * 100).toFloat, (r.nextInt(30)).toInt, timeInPoint.toString(), "")
          resultList += result
@@ -65,10 +68,7 @@ object LocalWeatherForecastApp extends MistJob {
 
      val answerResultList = new ResultList(resultList.toList)
 
-     val isdHystory = context.textFile("source/noaa/isd-history.csv")
-//    context.hadoopConfiguration.set("fs.s3n.awsAccessKeyId", "BLABLA")
-//    context.hadoopConfiguration.set("fs.s3n.awsSecretAccessKey", "....") // can contain "/"
-//    val isdHystory = context.textFile("s3n://mist-weather/isd-history.csv")
+     val isdHystory = context.textFile(s"${source}/isd-history.csv")
 
      answerResultList.results.map { answerpoint =>
 
@@ -77,13 +77,13 @@ object LocalWeatherForecastApp extends MistJob {
 
        var nearPointStations = ArrayBuffer[NearPoint]()
          for(stationIter <- 1 to 5){
-           nearPointStations += new NearPoint(0, 0, "", (360.0).toFloat, (720.0).toFloat, 0)
+           nearPointStations += new NearPoint("", "", "", (360.0).toFloat, (720.0).toFloat, 0)
          }
 
        for (line <- isdHystory.collect().drop(1)) {
          val rows = line.split(",").toList.zipWithIndex
-         val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "").toInt
-         val wban = rows.filter(row => row._2 == 1).head._1.replaceAll("\"", "").toInt
+         val usaf = rows.filter(row => row._2 == 0).head._1.replaceAll("\"", "")
+         val wban = rows.filter(row => row._2 == 1).head._1.replaceAll("\"", "")
          val stationName: String = rows.filter(row => row._2 == 2).head._1.replaceAll("\"", "")
          val latStr = rows.filter(row => row._2 == 6).head.toString().replaceAll("[\"()]", "").replaceFirst(",6", "")
 
@@ -118,7 +118,11 @@ object LocalWeatherForecastApp extends MistJob {
            if ( math.pow((math.pow(latDistanceStationPoint, 2) + math.pow(lonDistanceStationPoint, 2)), 0.5) >=
                 math.pow((math.pow(latDistanceNewStation, 2) + math.pow(lonDistanceNewStation, 2)), 0.5)) {
 
-               if (Files.exists(Paths.get(s"source/noaa/${year}/${usaf}-${wban}-${year}.gz"))) {
+             val conf = context.hadoopConfiguration
+             val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
+             val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
+
+             if(exists){
                  stationIter.usaf = usaf
                  stationIter.wban = wban
                  stationIter.name = stationName
@@ -131,9 +135,9 @@ object LocalWeatherForecastApp extends MistJob {
          }
        }
 
-       if (Files.exists(Paths.get(s"source/${nearPointStations.head.name}/data/_SUCCESS"))) {
+       if (Files.exists(Paths.get(s"${nearPointStations.head.name}/data/_SUCCESS"))) {
          println("start load")
-         val model = MultilayerPerceptronClassificationModel.load(s"source/${nearPointStations.head.name}")
+         val model = MultilayerPerceptronClassificationModel.load(s"${nearPointStations.head.name}")
 
          val featureReq = Seq((1.0,
            Vectors.dense( answerpoint.datetime.substring(0, 4).toDouble/2016.0,
@@ -164,19 +168,21 @@ object LocalWeatherForecastApp extends MistJob {
              answerpoint.stationName = nearPointStations.head.name
              for {stationIter <- nearPointStations} {
                println(stationIter.toString)
-
-               files +=
-                 context.textFile(s"source/noaa/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
+               val conf = context.hadoopConfiguration
+               val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
+               val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz"))
+               if(exists)
+                 files += context.textFile(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
              }
              context.union(files)
            }
            catch {
-             case _: Throwable => context.textFile("source/null")
+             case _: Throwable => context.textFile(s"null")
            }
          }
 
          var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
-         val pwt = new PrintWriter(new File("source/temp.txt"))
+         val pwt = new PrintWriter(new File(s"temp.txt"))
 
          srcFile.collect().map { line =>
 
@@ -235,32 +241,32 @@ object LocalWeatherForecastApp extends MistJob {
            }
          }
          pwt.close()
+         if (Files.exists(Paths.get("temp.txt"))) {
+           val dataFrame = contextSQL.read.format("libsvm")
+             .load(s"temp.txt")
+           val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
+           val train = splits(0)
+           val test = splits(1)
 
-         val dataFrame =  contextSQL.read.format("libsvm")
-           .load("source/temp.txt")
-         val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
-         val train = splits(0)
-         val test = splits(1)
+           val layers = Array[Int](5, 42, 26)
+           val trainer = new MultilayerPerceptronClassifier()
+             .setLayers(layers)
+             .setBlockSize(64)
+             .setSeed(1234L)
+             .setMaxIter(300)
+           val model = trainer.fit(train)
+           val w_ = SerializationUtils.serialize(model.weights)
 
-         val layers = Array[Int](5, 42, 26)
-         val trainer =  new MultilayerPerceptronClassifier()
-           .setLayers(layers)
-           .setBlockSize(64)
-           .setSeed(1234L)
-           .setMaxIter(300)
-         val model = trainer.fit(train)
-         val w_ = SerializationUtils.serialize(model.weights)
+           model.save(s"${answerpoint.stationName}")
+           val result = model.transform(test)
 
-         model.save(s"source/${answerpoint.stationName}")
-         val result = model.transform(test)
+           result.show(15)
 
-         result.show(15)
-
-         val predictionAndLabels = result.select("prediction", "label")
-         val evaluator = new MulticlassClassificationEvaluator()
-           .setMetricName("accuracy")
-         println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
-
+           val predictionAndLabels = result.select("prediction", "label")
+           val evaluator = new MulticlassClassificationEvaluator()
+             .setMetricName("accuracy")
+           println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
+         }
        }
        println("finish")
      }
