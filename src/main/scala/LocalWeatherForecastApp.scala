@@ -23,8 +23,7 @@ case class NearPoint(var usaf: String, var wban: String, var name: String, var l
 object LocalWeatherForecastApp extends MistJob {
 
   override def doStuff(sparkSession: SparkSession, parameters: Map[String, Any]): Map[String, Any] = {
-    val hdfshost = "hdfs://172.32.1.53:9000"
-    val source = s"${hdfshost}/weather" // source/noaa/
+    val source = s"noaa-onestation/" // source/noaa/
 
     val contextSQL = sparkSession.sqlContext
     val context = sparkSession.sparkContext
@@ -117,9 +116,7 @@ object LocalWeatherForecastApp extends MistJob {
            if ( math.pow((math.pow(latDistanceStationPoint, 2) + math.pow(lonDistanceStationPoint, 2)), 0.5) >=
                 math.pow((math.pow(latDistanceNewStation, 2) + math.pow(lonDistanceNewStation, 2)), 0.5)) {
 
-             val conf = context.hadoopConfiguration
-             val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
-             val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
+             val exists = Files.exists(Paths.get(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
 
              if(exists){
                  stationIter.usaf = usaf
@@ -167,9 +164,7 @@ object LocalWeatherForecastApp extends MistJob {
              answerpoint.stationName = nearPointStations.head.name
              for {stationIter <- nearPointStations} {
                println(stationIter.toString)
-               val conf = context.hadoopConfiguration
-               val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
-               val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz"))
+               val exists = Files.exists(Paths.get(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz"))
                if(exists)
                  files += context.textFile(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
              }
@@ -185,7 +180,6 @@ object LocalWeatherForecastApp extends MistJob {
 
          var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
          val pwt = new PrintWriter(new File(s"temp.txt"))
-//         val temperatures = ArrayBuffer[String]()
 
          srcFile.map { line =>
 
@@ -242,24 +236,11 @@ object LocalWeatherForecastApp extends MistJob {
              pwt.write(s"${dataNorm} \r\n")
 
            }
-
-//           temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
-//                            s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
-//                            s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
-//                            s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
-//                            s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
-//                            s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
          }
          pwt.close()
          if (Files.exists(Paths.get("temp.txt"))) {
            val dataFrame = contextSQL.read.format("libsvm")
              .load(s"temp.txt")
-
-//         val pwt = new PrintWriter(new File("temp.txt"))
-//         pwt.write(temperatures.toString())
-//         pwt.flush()
-//         pwt.close()
-//           val dataFrame = contextSQL.read.format("libsvm").load("temp.txt")
 
            val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
            val train = splits(0)

@@ -23,8 +23,7 @@ object LocalWeatherForecastTrainer extends MistJob {
 
   override def doStuff(sparkSession: SparkSession, parameters: Map[String, Any]): Map[String, Any] = {
 
-    val hdfshost = "hdfs://172.32.1.53:9000"
-    val source = s"${hdfshost}/weather" // source/noaa/
+    val source = s"noaa-onestation/" // source/noaa/
 
     val contextSQL = sparkSession.sqlContext
     val context = sparkSession.sparkContext
@@ -67,9 +66,7 @@ object LocalWeatherForecastTrainer extends MistJob {
      var year = new DateTime (nowDate).withZone(DateTimeZone.UTC).getYear().toInt
 
      for{stationIter <- nearPointStations}{
-       val conf = context.hadoopConfiguration
-       val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
-       val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
+       val exists = Files.exists(Paths.get(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
 
        if(exists) {
          stationIter.usaf = usaf
@@ -81,9 +78,7 @@ object LocalWeatherForecastTrainer extends MistJob {
        }
        year -= 1
      }
-      val conf = context.hadoopConfiguration
-      val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
-      val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
+      val exists = Files.exists(Paths.get(s"${source}/${year}/${usaf}-${wban}-${year}.gz"))
 
       if (exists) {
         val srcFile = {
@@ -92,9 +87,7 @@ object LocalWeatherForecastTrainer extends MistJob {
             for {stationIter <- nearPointStations} {
               println(stationIter.toString)
 
-              val conf = context.hadoopConfiguration
-              val fs = org.apache.hadoop.fs.FileSystem.get(new URI(hdfshost), conf)
-              val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz"))
+              val exists = Files.exists(Paths.get(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz"))
 
               if(exists)
                 files += context.textFile(s"${source}/${stationIter.year}/${stationIter.usaf}-${stationIter.wban}-${stationIter.year}.gz")
@@ -110,7 +103,6 @@ object LocalWeatherForecastTrainer extends MistJob {
         }
 
         val pwt = new PrintWriter(new File(s"temp_teach.txt"))
-//        val temperatures = ArrayBuffer[String]()
 
         srcFile.map { line =>
 
@@ -158,20 +150,6 @@ object LocalWeatherForecastTrainer extends MistJob {
               s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
               s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} "
 
-//            trainSeq :+ Seq(((airTemperature / 4).toInt + 13).toDouble,
-//              Vectors.dense( geoPointDate.substring(0, 4).toDouble / 2016.0,
-//                geoPointDate.substring(0, 4).toDouble / 2016.0,
-//                geoPointDate.substring(6, 8).toDouble / 31.0,
-//                geoPointTime.substring(0, 2).toDouble / 24.0,
-//                geoPointTime.substring(2, 4).toDouble / 60.0)))
-
-//            temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
-//                            s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
-//                            s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
-//                            s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
-//                            s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
-//                            s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
-
             pwt.write(s"${dataNorm} \r\n")
 
           }
@@ -185,20 +163,11 @@ object LocalWeatherForecastTrainer extends MistJob {
               .load(s"temp_teach.txt")
 
 
-            import sparkSession.implicits._
-//            val pwt = new PrintWriter(new File("temp_teach.txt"))
-//            pwt.write(temperatures.toString())
-//            pwt.flush()
-//            pwt.close()
-//            val dataFrame = contextSQL.read.format("libsvm").load("temp_teach.txt")
-          //val requestData = contextSQL.createDataFrame(temperatures).toDF("label", "features")
-
             dataFrame.show(5)
 
             val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
             val train = splits(0)
             val test = splits(1)
-            // specify layers for the neural network:
             val layers = Array[Int](5, 42, 26)
 
 
