@@ -109,10 +109,10 @@ object LocalWeatherForecastTrainer extends MistJob {
           }
         }
 
-        val pwt = new PrintWriter(new File(s"temp_teach.txt"))
-//        val temperatures = ArrayBuffer[String]()
+//        val pwt = new PrintWriter(new File(s"temp_teach.txt"))
+        val temperatures = ArrayBuffer[String]()
 
-        srcFile.map { line =>
+        srcFile.collect().map { line =>
 
           val numDataSection = line.substring(0, 4)
           val usaf = line.substring(4, 10)
@@ -151,46 +151,40 @@ object LocalWeatherForecastTrainer extends MistJob {
 
           if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
 
-            val dataNorm = s"${((airTemperature / 4).toInt + 13).toDouble} " +
-              s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
-              s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
-              s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
-              s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
-              s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} "
+//            val dataNorm = s"${((airTemperature / 4).toInt + 13).toDouble} " +
+//              s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
+//              s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
+//              s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
+//              s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
+//              s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} "
 
-//            trainSeq :+ Seq(((airTemperature / 4).toInt + 13).toDouble,
-//              Vectors.dense( geoPointDate.substring(0, 4).toDouble / 2016.0,
-//                geoPointDate.substring(0, 4).toDouble / 2016.0,
-//                geoPointDate.substring(6, 8).toDouble / 31.0,
-//                geoPointTime.substring(0, 2).toDouble / 24.0,
-//                geoPointTime.substring(2, 4).toDouble / 60.0)))
 
-//            temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
-//                            s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
-//                            s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
-//                            s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
-//                            s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
-//                            s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
+            temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
+                            s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
+                            s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
+                            s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
+                            s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
+                            s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
 
-            pwt.write(s"${dataNorm} \r\n")
+//            pwt.write(s"${dataNorm} \r\n")
 
           }
         }
 
-        pwt.close()
+//        pwt.close()
 
         if (!Files.exists(Paths.get(s"${nearPointStations.head.name}/data/_SUCCESS"))) {
-          if (Files.exists(Paths.get("temp_teach.txt"))) {
-            val dataFrame = contextSQL.read.format("libsvm")
-              .load(s"temp_teach.txt")
+//          if (Files.exists(Paths.get("temp_teach.txt"))) {
+//            val dataFrame = contextSQL.read.format("libsvm")
+//              .load(s"temp_teach.txt")
 
 
             import sparkSession.implicits._
-//            val pwt = new PrintWriter(new File("temp_teach.txt"))
-//            pwt.write(temperatures.toString())
-//            pwt.flush()
-//            pwt.close()
-//            val dataFrame = contextSQL.read.format("libsvm").load("temp_teach.txt")
+            val pwt = new PrintWriter(new File("temp_teach.txt"))
+            pwt.write(temperatures.toString())
+            pwt.flush()
+            pwt.close()
+            val dataFrame = contextSQL.read.format("libsvm").load("temp_teach.txt")
           //val requestData = contextSQL.createDataFrame(temperatures).toDF("label", "features")
 
             dataFrame.show(5)
@@ -221,7 +215,7 @@ object LocalWeatherForecastTrainer extends MistJob {
             val evaluator = new MulticlassClassificationEvaluator()
               .setMetricName("accuracy")
             println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
-          }
+//          }
         }
       }
     }
