@@ -16,7 +16,6 @@ import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationMod
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.linalg.Vectors
 import org.apache.spark.rdd.RDD
-import org.mapdb.{DBMaker, Serializer}
 import org.apache.commons.lang.SerializationUtils
 
 case class NearPoint(var usaf: String, var wban: String, var name: String, var lat: Float, var lng: Float, var year: Int)
@@ -177,14 +176,18 @@ object LocalWeatherForecastApp extends MistJob {
              context.union(files)
            }
            catch {
-             case _: Throwable => context.textFile(s"null")
+             case _: Throwable => {
+               (new PrintWriter(new File(s"null"))).close()
+               context.textFile(s"null")
+             }
            }
          }
 
          var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
          val pwt = new PrintWriter(new File(s"temp.txt"))
+//         val temperatures = ArrayBuffer[String]()
 
-         srcFile.collect().map { line =>
+         srcFile.map { line =>
 
            val numDataSection = line.substring(0, 4)
            val usaf = line.substring(4, 10)
@@ -239,11 +242,25 @@ object LocalWeatherForecastApp extends MistJob {
              pwt.write(s"${dataNorm} \r\n")
 
            }
+
+//           temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
+//                            s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
+//                            s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
+//                            s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
+//                            s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
+//                            s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
          }
          pwt.close()
          if (Files.exists(Paths.get("temp.txt"))) {
            val dataFrame = contextSQL.read.format("libsvm")
              .load(s"temp.txt")
+
+//         val pwt = new PrintWriter(new File("temp.txt"))
+//         pwt.write(temperatures.toString())
+//         pwt.flush()
+//         pwt.close()
+//           val dataFrame = contextSQL.read.format("libsvm").load("temp.txt")
+
            val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
            val train = splits(0)
            val test = splits(1)
