@@ -104,7 +104,7 @@ object LocalWeatherForecastTrainer extends MistJob {
 
         val pwt = new PrintWriter(new File(s"temp_teach.txt"))
 
-        srcFile.map { line =>
+        srcFile.collect().map { line =>
 
           val numDataSection = line.substring(0, 4)
           val usaf = line.substring(4, 10)

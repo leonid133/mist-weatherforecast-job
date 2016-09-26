@@ -181,7 +181,7 @@ object LocalWeatherForecastApp extends MistJob {
          var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
          val pwt = new PrintWriter(new File(s"temp.txt"))
 
-         srcFile.map { line =>
+         srcFile.collect().map { line =>
 
            val numDataSection = line.substring(0, 4)
            val usaf = line.substring(4, 10)
