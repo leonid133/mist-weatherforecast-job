@@ -184,8 +184,8 @@ object LocalWeatherForecastApp extends MistJob {
          }
 
          var deltaTime = (new DateTime(answerpoint.datetime).withZone(DateTimeZone.UTC)).getMillis
-//         val pwt = new PrintWriter(new File(s"temp.txt"))
-         val temperatures = ArrayBuffer[String]()
+         val pwt = new PrintWriter(new File(s"temp.txt"))
+//         val temperatures = ArrayBuffer[String]()
 
          srcFile.collect().map { line =>
 
@@ -231,28 +231,36 @@ object LocalWeatherForecastApp extends MistJob {
            }
 
            if (airTemperature.toInt < 50 && airTemperature.toInt > -50) {
-
-             temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
+             val dataNorm = s"${((airTemperature / 4).toInt + 13).toDouble} " +
                s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
                s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
                s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
                s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
-               s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
+               s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} "
+
+             pwt.write(s"${dataNorm} \r\n")
+
+//             temperatures += s"${((airTemperature / 4).toInt + 13).toDouble} " +
+//               s"1:${geoPointDate.substring(0, 4).toDouble / 2016.0} " +
+//               s"2:${geoPointDate.substring(4, 6).toDouble / 12.0} " +
+//               s"3:${geoPointDate.substring(6, 8).toDouble / 31.0} " +
+//               s"4:${geoPointTime.substring(0, 2).toDouble / 24.0} " +
+//               s"5:${geoPointTime.substring(2, 4).toDouble / 60.0} \r\n"
 
            }
 
 
          }
-//         pwt.close()
-//         if (Files.exists(Paths.get("temp.txt"))) {
-//           val dataFrame = contextSQL.read.format("libsvm")
-//             .load(s"temp.txt")
-
-         val pwt = new PrintWriter(new File("temp.txt"))
-         pwt.write(temperatures.toString())
-         pwt.flush()
          pwt.close()
-           val dataFrame = contextSQL.read.format("libsvm").load("temp.txt")
+         if (Files.exists(Paths.get("temp.txt"))) {
+           val dataFrame = contextSQL.read.format("libsvm")
+             .load(s"temp.txt")
+
+//         val pwt = new PrintWriter(new File("temp.txt"))
+//         pwt.write(temperatures.toString())
+//         pwt.flush()
+//         pwt.close()
+//         val dataFrame = contextSQL.read.format("libsvm").load("temp.txt")
 
            val splits = dataFrame.randomSplit(Array(0.9, 0.1), seed = 1234L)
            val train = splits(0)
@@ -276,7 +284,7 @@ object LocalWeatherForecastApp extends MistJob {
            val evaluator = new MulticlassClassificationEvaluator()
              .setMetricName("accuracy")
            println("Accuracy:" + evaluator.evaluate(predictionAndLabels))
-         //}
+         }
        }
        println("finish")
      }
